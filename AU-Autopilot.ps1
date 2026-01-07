@@ -328,21 +328,38 @@ try {
     if (-not (Get-MgContext)) {
         Write-Color -Text "Disabling Web Account Manager temporarily..." -Color Yellow -ShowTime
 
-        # Store original WAM settings if they exist
-        $wamPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings"
-        $wamKeyName = "DisableWebAccountManager"
+        # Multiple registry paths to ensure WAM is fully disabled
+        $registryChanges = @()
 
+        # Path 1: Disable MSA/AAD broker
+        $path1 = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        $key1 = "EnableWebSignIn"
         try {
-            $originalWamValue = Get-ItemProperty -Path $wamPath -Name $wamKeyName -ErrorAction SilentlyContinue
-        } catch {
-            $originalWamValue = $null
-        }
+            $original1 = Get-ItemProperty -Path $path1 -Name $key1 -ErrorAction SilentlyContinue
+            $registryChanges += @{Path = $path1; Key = $key1; Original = $original1}
+            if (-not (Test-Path $path1)) { New-Item -Path $path1 -Force | Out-Null }
+            Set-ItemProperty -Path $path1 -Name $key1 -Value 0 -Type DWord -Force
+        } catch {}
 
-        # Disable WAM
-        if (-not (Test-Path $wamPath)) {
-            New-Item -Path $wamPath -Force | Out-Null
-        }
-        New-ItemProperty -Path $wamPath -Name $wamKeyName -Value 1 -PropertyType DWord -Force | Out-Null
+        # Path 2: Disable WAM
+        $path2 = "HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}"
+        $key2 = "Enabled"
+        try {
+            $original2 = Get-ItemProperty -Path $path2 -Name $key2 -ErrorAction SilentlyContinue
+            $registryChanges += @{Path = $path2; Key = $key2; Original = $original2}
+            if (-not (Test-Path $path2)) { New-Item -Path $path2 -Force | Out-Null }
+            Set-ItemProperty -Path $path2 -Name $key2 -Value 0 -Type DWord -Force
+        } catch {}
+
+        # Path 3: Disable Account Picker
+        $path3 = "HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device\Authentication"
+        $key3 = "AllowSecondaryAuthenticationDevice"
+        try {
+            $original3 = Get-ItemProperty -Path $path3 -Name $key3 -ErrorAction SilentlyContinue
+            $registryChanges += @{Path = $path3; Key = $key3; Original = $original3}
+            if (-not (Test-Path $path3)) { New-Item -Path $path3 -Force | Out-Null }
+            Set-ItemProperty -Path $path3 -Name $key3 -Value 0 -Type DWord -Force
+        } catch {}
 
         Write-Color -Text "Connecting to Microsoft Graph (browser login will open)..." -Color Yellow -ShowTime
 
@@ -352,12 +369,16 @@ try {
 
         Write-Color -Text "Successfully connected to Microsoft Graph" -Color Green -ShowTime
 
-        # Restore original WAM setting
+        # Restore original registry settings
         Write-Color -Text "Re-enabling Web Account Manager..." -Color Yellow -ShowTime
-        if ($null -eq $originalWamValue) {
-            Remove-ItemProperty -Path $wamPath -Name $wamKeyName -Force -ErrorAction SilentlyContinue
-        } else {
-            Set-ItemProperty -Path $wamPath -Name $wamKeyName -Value $originalWamValue.$wamKeyName -Force
+        foreach ($change in $registryChanges) {
+            try {
+                if ($null -eq $change.Original) {
+                    Remove-ItemProperty -Path $change.Path -Name $change.Key -Force -ErrorAction SilentlyContinue
+                } else {
+                    Set-ItemProperty -Path $change.Path -Name $change.Key -Value $change.Original.($change.Key) -Force -ErrorAction SilentlyContinue
+                }
+            } catch {}
         }
     }
 
@@ -398,13 +419,19 @@ try {
     Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
     try {
-        # Restore WAM setting as a failsafe (in case error occurred before restoration)
-        $wamPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings"
-        $wamKeyName = "DisableWebAccountManager"
-        if (Test-Path $wamPath) {
-            if (Get-ItemProperty -Path $wamPath -Name $wamKeyName -ErrorAction SilentlyContinue) {
-                Remove-ItemProperty -Path $wamPath -Name $wamKeyName -Force -ErrorAction SilentlyContinue
-            }
+        # Restore WAM settings as a failsafe (in case error occurred before restoration)
+        $cleanupPaths = @(
+            @{Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"; Key = "EnableWebSignIn"},
+            @{Path = "HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}"; Key = "Enabled"},
+            @{Path = "HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device\Authentication"; Key = "AllowSecondaryAuthenticationDevice"}
+        )
+
+        foreach ($cleanup in $cleanupPaths) {
+            try {
+                if (Test-Path $cleanup.Path) {
+                    Remove-ItemProperty -Path $cleanup.Path -Name $cleanup.Key -Force -ErrorAction SilentlyContinue
+                }
+            } catch {}
         }
 
         Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted -ErrorAction SilentlyContinue | Out-Null
