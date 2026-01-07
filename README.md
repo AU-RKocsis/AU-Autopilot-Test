@@ -14,9 +14,9 @@ Installs required modules and launches the AutopilotOOBE module with pre-configu
 
 ### Usage
 
-Quick launch via URL:
+Quick launch via URL: Not Correct URL*
 ```powershell
-irm https://tinyurl.com/AU-Autopilot | iex
+irm https://tinyurl.com/AU-Autopilot | iex 
 ```
 
 Or run directly:
