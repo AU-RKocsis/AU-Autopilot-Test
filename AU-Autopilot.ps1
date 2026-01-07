@@ -347,7 +347,6 @@ try {
         Write-Color -Text "Connecting to Microsoft Graph (browser login will open)..." -Color Yellow -ShowTime
 
         Connect-MgGraph `
-            -TenantId "34996142-c2c2-49f6-a30d-ccf73f568c9c" `
             -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
             -NoWelcome
 
