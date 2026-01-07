@@ -302,7 +302,7 @@ try {
     Write-Color -Text "|__________________________________________________________________________________________|" -Color White -BackgroundColor Black -Center $True
     Write-Color -Text "Script: ","AutopilotOOBE Prep" -Color Yellow,White -Center $True -LinesBefore 1
     Write-Color -Text "Author: " ,"Mark Newton" -Color Yellow,White -Center $True -LinesAfter 1
-    Write-Color -Text "Note: " ,"You can use Alt+Tab to switch to windows that get hidden behind OOBE. 'n Update 2025 - New Naming convention in place." -Color Red,White -Center $True -LinesAfter 1
+    Write-Color -Text "Note: " ,"You can use Alt+Tab to switch to windows that get hidden behind OOBE. Update 2025 - New Naming convention in place." -Color Red,White -Center $True -LinesAfter 1
 
     Write-Color -Text "Preparing device for AutopilotOOBE" -Color White -ShowTime
 
