@@ -17,16 +17,21 @@
 
     .EXAMPLE
     The below URL will launch this script on the PC without having to do anything else. It loads the raw github
-    of this script from: https://github.com/AU-Mark/Autopilot/blob/main/Run-AutopilotOOBE.ps1
+    of this script from: https://github.com/AU-RKocsis/AU-Autopilot/blob/main/AU-Autopilot.ps1
 
     irm https://tinyurl.com/AU-Autopilot | iex
 
     .NOTES
-    Version:        1.0
+    Version:        2.0
     Author:         Mark Newton
     Creation Date:  07/02/2024
+    Updated by:    Robert Kocsis
+    Update Date:   01/07/2026
     Purpose/Change: Initial script development
-    
+    Update 2.0:     Added to bypass WAM, or to not needing to select "Personal" or "Work Account"   
+                    Added connection success message, along with changes to GUI to reflect current Computer Naming Standards
+                    Moved to IIT GitHub Repository, updated URL in example, need to update tinyurl link as well
+
     #>
 
 
