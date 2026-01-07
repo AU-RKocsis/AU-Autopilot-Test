@@ -329,12 +329,23 @@ try {
         Write-Color -Text "Connecting to Microsoft Graph using Device Code authentication..." -Color Yellow -ShowTime
         Write-Color -Text "A code will be displayed. Enter it at https://microsoft.com/devicelogin on any device." -Color Cyan -ShowTime
 
-        Connect-MgGraph `
-            -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
-            -UseDeviceCode `
-            -NoWelcome
+        # Force disable broker/WAM via environment variables
+        $env:AZURE_IDENTITY_DISABLE_CP1 = "true"
+        $env:MSAL_FORCE_BROKER = "false"
 
-        Write-Color -Text "Successfully connected to Microsoft Graph" -Color Green -ShowTime
+        try {
+            Connect-MgGraph `
+                -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
+                -UseDeviceCode `
+                -NoWelcome `
+                -ContextScope Process
+
+            Write-Color -Text "Successfully connected to Microsoft Graph" -Color Green -ShowTime
+        } finally {
+            # Clean up environment variables
+            Remove-Item Env:\AZURE_IDENTITY_DISABLE_CP1 -ErrorAction SilentlyContinue
+            Remove-Item Env:\MSAL_FORCE_BROKER -ErrorAction SilentlyContinue
+        }
     }
 
 
