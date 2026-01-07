@@ -324,42 +324,16 @@ try {
     Import-Module 'Microsoft.Graph.Identity.DirectoryManagement'
     Import-Module 'AutopilotOOBE'
 
-    # Temporarily disable WAM to prevent Personal/Work account prompt
+    # Connect via TenantID to eliminate the issue with WAM
     if (-not (Get-MgContext)) {
-        Write-Color -Text "Disabling Web Account Manager temporarily..." -Color Yellow -ShowTime
+    Write-Color -Text "Connecting to Microsoft Graph using Device Code..." -Color Yellow -ShowTime
 
-        # Store original WAM settings if they exist
-        $wamPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings"
-        $wamKeyName = "DisableWebAccountManager"
-
-        try {
-            $originalWamValue = Get-ItemProperty -Path $wamPath -Name $wamKeyName -ErrorAction SilentlyContinue
-        } catch {
-            $originalWamValue = $null
-        }
-
-        # Disable WAM
-        if (-not (Test-Path $wamPath)) {
-            New-Item -Path $wamPath -Force | Out-Null
-        }
-        New-ItemProperty -Path $wamPath -Name $wamKeyName -Value 1 -PropertyType DWord -Force | Out-Null
-
-        Write-Color -Text "Connecting to Microsoft Graph (browser login will open)..." -Color Yellow -ShowTime
-
-        Connect-MgGraph `
-            -TenantId "34996142-c2c2-49f6-a30d-ccf73f568c9c" `
-            -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
-            -NoWelcome
+    Connect-MgGraph `
+        -TenantId "34996142-c2c2-49f6-a30d-ccf73f568c9c" `
+        -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
+        -UseDeviceCode
 
         Write-Color -Text "Successfully connected to Microsoft Graph" -Color Green -ShowTime
-
-        # Restore original WAM setting
-        Write-Color -Text "Re-enabling Web Account Manager..." -Color Yellow -ShowTime
-        if ($null -eq $originalWamValue) {
-            Remove-ItemProperty -Path $wamPath -Name $wamKeyName -Force -ErrorAction SilentlyContinue
-        } else {
-            Set-ItemProperty -Path $wamPath -Name $wamKeyName -Value $originalWamValue.$wamKeyName -Force
-        }
     }
 
 
@@ -399,15 +373,6 @@ try {
     Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
     try {
-        # Restore WAM setting as a failsafe (in case error occurred before restoration)
-        $wamPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings"
-        $wamKeyName = "DisableWebAccountManager"
-        if (Test-Path $wamPath) {
-            if (Get-ItemProperty -Path $wamPath -Name $wamKeyName -ErrorAction SilentlyContinue) {
-                Remove-ItemProperty -Path $wamPath -Name $wamKeyName -Force -ErrorAction SilentlyContinue
-            }
-        }
-
         Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted -ErrorAction SilentlyContinue | Out-Null
         Set-ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue | Out-Null
     } catch {
