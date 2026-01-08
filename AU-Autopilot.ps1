@@ -328,6 +328,8 @@ try {
     if (-not (Get-MgContext)) {
         Write-Color -Text "Connecting to Microsoft Graph using Device Code authentication..." -Color Yellow -ShowTime
         Write-Color -Text "A code will be displayed. Enter it at https://microsoft.com/devicelogin on any device." -Color Cyan -ShowTime
+        Write-Color -Text " "
+        Write-Color -Text "NOTE: If prompted for account type, select 'Work or School account'" -Color Magenta -ShowTime
 
         # Force disable broker/WAM via environment variables
         $env:AZURE_IDENTITY_DISABLE_CP1 = "true"
