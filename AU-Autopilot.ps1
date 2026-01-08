@@ -324,6 +324,21 @@ try {
     Import-Module 'Microsoft.Graph.Identity.DirectoryManagement'
     Import-Module 'AutopilotOOBE'
 
+    # Disable WAM temporarily via registry
+    Write-Color -Text "Disabling Web Account Manager (WAM) via registry..." -Color Yellow -ShowTime
+    $regPaths = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}',
+        'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}',
+        'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'
+    )
+
+    foreach ($path in $regPaths) {
+        if (-not (Test-Path $path)) {
+            New-Item -Path $path -Force | Out-Null
+        }
+        Set-ItemProperty -Path $path -Name 'Enabled' -Value 0 -Type DWord -Force
+    }
+
     # Connect using Device Code to completely bypass WAM
     if (-not (Get-MgContext)) {
         Write-Color -Text "Connecting to Microsoft Graph using Device Code authentication..." -Color Yellow -ShowTime
@@ -387,6 +402,20 @@ try {
     Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
     try {
+        # Restore WAM registry settings
+        Write-Color -Text "Restoring Web Account Manager (WAM) registry settings..." -Color Yellow -ShowTime
+        $regPaths = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}',
+            'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}',
+            'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'
+        )
+
+        foreach ($path in $regPaths) {
+            if (Test-Path $path) {
+                Set-ItemProperty -Path $path -Name 'Enabled' -Value 1 -Type DWord -Force
+            }
+        }
+
         Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted -ErrorAction SilentlyContinue | Out-Null
         Set-ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue | Out-Null
     } catch {
