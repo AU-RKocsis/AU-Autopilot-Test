@@ -22,7 +22,7 @@
     irm https://tinyurl.com/AU-Autopilot | iex
 
     .NOTES
-    Version:        2.1
+    Version:        2.2
     Author:         Mark Newton
     Creation Date:  07/02/2024
     Updated by:    Robert Kocsis
@@ -36,6 +36,9 @@
                     Changed PostAction from 'Restart' to 'Quit' to ensure WAM restoration before restart
                     Added manual restart after WAM restoration to prevent registry changes from being lost
                     Improved error handling and retry logic for Graph connection
+    Update 2.2:     Fixed environment variables to persist through entire AutopilotOOBE execution
+                    Moved environment variable cleanup to after AutopilotOOBE completes
+                    Resolves WAM prompts during Get-WindowsAutoPilotInfo execution
 
     #>
 
@@ -357,22 +360,23 @@ try {
     # Force registry changes to take effect
     Start-Sleep -Milliseconds 500
 
+    # Set comprehensive environment variables to disable all WAM/broker mechanisms
+    # These must stay active throughout the entire AutopilotOOBE process
+    $env:AZURE_IDENTITY_DISABLE_CP1 = "true"
+    $env:MSAL_FORCE_BROKER = "false"
+    $env:AZURE_IDENTITY_DISABLE_MULTITENANTAUTH = "true"
+    $env:MSA_AAD_DISABLE_MODERN_AUTH = "true"
+    $env:MSALDESKTOP_FORCE_DEVICECODE = "true"
+
+    # Stop any running broker processes that might interfere
+    Get-Process | Where-Object {$_.ProcessName -like "*broker*" -or $_.ProcessName -like "*WAM*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+
     # Connect using Device Code to completely bypass WAM
     if (-not (Get-MgContext)) {
         Write-Color -Text "Connecting to Microsoft Graph using Device Code authentication..." -Color Yellow -ShowTime
         Write-Color -Text "A code will be displayed. Enter it at https://microsoft.com/devicelogin on any device." -Color Cyan -ShowTime
         Write-Color -Text " "
         Write-Color -Text "NOTE: If prompted for account type, select 'Work or School account'" -Color Magenta -ShowTime
-
-        # Set comprehensive environment variables to disable all WAM/broker mechanisms
-        $env:AZURE_IDENTITY_DISABLE_CP1 = "true"
-        $env:MSAL_FORCE_BROKER = "false"
-        $env:AZURE_IDENTITY_DISABLE_MULTITENANTAUTH = "true"
-        $env:MSA_AAD_DISABLE_MODERN_AUTH = "true"
-        $env:MSALDESKTOP_FORCE_DEVICECODE = "true"
-
-        # Stop any running broker processes that might interfere
-        Get-Process | Where-Object {$_.ProcessName -like "*broker*" -or $_.ProcessName -like "*WAM*"} | Stop-Process -Force -ErrorAction SilentlyContinue
 
         try {
             Connect-MgGraph `
@@ -398,13 +402,6 @@ try {
                 -ContextScope Process
 
             Write-Color -Text "Successfully connected to Microsoft Graph" -Color Green -ShowTime
-        } finally {
-            # Clean up environment variables
-            Remove-Item Env:\AZURE_IDENTITY_DISABLE_CP1 -ErrorAction SilentlyContinue
-            Remove-Item Env:\MSAL_FORCE_BROKER -ErrorAction SilentlyContinue
-            Remove-Item Env:\AZURE_IDENTITY_DISABLE_MULTITENANTAUTH -ErrorAction SilentlyContinue
-            Remove-Item Env:\MSA_AAD_DISABLE_MODERN_AUTH -ErrorAction SilentlyContinue
-            Remove-Item Env:\MSALDESKTOP_FORCE_DEVICECODE -ErrorAction SilentlyContinue
         }
     }
 
@@ -442,6 +439,13 @@ try {
     # Run the AutopilotOOBE module with the configured parameters
     AutopilotOOBE @Params
 
+    # Clean up environment variables after AutopilotOOBE completes
+    Remove-Item Env:\AZURE_IDENTITY_DISABLE_CP1 -ErrorAction SilentlyContinue
+    Remove-Item Env:\MSAL_FORCE_BROKER -ErrorAction SilentlyContinue
+    Remove-Item Env:\AZURE_IDENTITY_DISABLE_MULTITENANTAUTH -ErrorAction SilentlyContinue
+    Remove-Item Env:\MSA_AAD_DISABLE_MODERN_AUTH -ErrorAction SilentlyContinue
+    Remove-Item Env:\MSALDESKTOP_FORCE_DEVICECODE -ErrorAction SilentlyContinue
+
     # Restore WAM registry settings after AutopilotOOBE completes (before restart)
     Write-Color -Text "Restoring Web Account Manager (WAM) registry settings..." -Color Yellow -ShowTime
 
@@ -476,6 +480,13 @@ try {
     Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
     try {
+        # Clean up environment variables
+        Remove-Item Env:\AZURE_IDENTITY_DISABLE_CP1 -ErrorAction SilentlyContinue
+        Remove-Item Env:\MSAL_FORCE_BROKER -ErrorAction SilentlyContinue
+        Remove-Item Env:\AZURE_IDENTITY_DISABLE_MULTITENANTAUTH -ErrorAction SilentlyContinue
+        Remove-Item Env:\MSA_AAD_DISABLE_MODERN_AUTH -ErrorAction SilentlyContinue
+        Remove-Item Env:\MSALDESKTOP_FORCE_DEVICECODE -ErrorAction SilentlyContinue
+
         # Ensure WAM is restored even if script errors out
         $regRestoreSettings = @(
             @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}'; Name = 'Enabled'; Value = 1},
