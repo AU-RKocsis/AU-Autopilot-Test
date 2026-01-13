@@ -22,15 +22,20 @@
     irm https://tinyurl.com/AU-Autopilot | iex
 
     .NOTES
-    Version:        2.0
+    Version:        2.1
     Author:         Mark Newton
     Creation Date:  07/02/2024
     Updated by:    Robert Kocsis
-    Update Date:   01/07/2026
+    Update Date:   01/13/2026
     Purpose/Change: Initial script development
-    Update 2.0:     Added to bypass WAM, or to not needing to select "Personal" or "Work Account"   
+    Update 2.0:     Added to bypass WAM, or to not needing to select "Personal" or "Work Account"
                     Added connection success message, along with changes to GUI to reflect current Computer Naming Standards
                     Moved to IIT GitHub Repository, updated URL in example, need to update tinyurl link as well
+    Update 2.1:     Enhanced WAM bypass with comprehensive registry settings and environment variables
+                    Added process termination for broker/WAM processes
+                    Changed PostAction from 'Restart' to 'Quit' to ensure WAM restoration before restart
+                    Added manual restart after WAM restoration to prevent registry changes from being lost
+                    Improved error handling and retry logic for Graph connection
 
     #>
 
@@ -326,18 +331,31 @@ try {
 
     # Disable WAM temporarily via registry
     Write-Color -Text "Disabling Web Account Manager (WAM) via registry..." -Color Yellow -ShowTime
-    $regPaths = @(
-        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}',
-        'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}',
-        'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'
+
+    # Comprehensive WAM disable registry settings
+    $regSettings = @(
+        @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}'; Name = 'Enabled'; Value = 0},
+        @{Path = 'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}'; Name = 'Enabled'; Value = 0},
+        @{Path = 'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'; Name = 'LoadCredKeyFromProfile'; Value = 0},
+        @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'EnableWebAccountManager'; Value = 0},
+        @{Path = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\AAD'; Name = 'DisableAADWAM'; Value = 1},
+        @{Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; Name = 'EnableActivityFeed'; Value = 0}
     )
 
-    foreach ($path in $regPaths) {
-        if (-not (Test-Path $path)) {
-            New-Item -Path $path -Force | Out-Null
+    foreach ($setting in $regSettings) {
+        try {
+            if (-not (Test-Path $setting.Path)) {
+                New-Item -Path $setting.Path -Force -ErrorAction Stop | Out-Null
+            }
+            Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type DWord -Force -ErrorAction Stop
+            Write-Color -Text "  Set $($setting.Path)\$($setting.Name) = $($setting.Value)" -Color DarkGray -ShowTime
+        } catch {
+            Write-Color -Text "  Warning: Could not set $($setting.Path)\$($setting.Name)" -Color Yellow -ShowTime
         }
-        Set-ItemProperty -Path $path -Name 'Enabled' -Value 0 -Type DWord -Force
     }
+
+    # Force registry changes to take effect
+    Start-Sleep -Milliseconds 500
 
     # Connect using Device Code to completely bypass WAM
     if (-not (Get-MgContext)) {
@@ -346,11 +364,33 @@ try {
         Write-Color -Text " "
         Write-Color -Text "NOTE: If prompted for account type, select 'Work or School account'" -Color Magenta -ShowTime
 
-        # Force disable broker/WAM via environment variables
+        # Set comprehensive environment variables to disable all WAM/broker mechanisms
         $env:AZURE_IDENTITY_DISABLE_CP1 = "true"
         $env:MSAL_FORCE_BROKER = "false"
+        $env:AZURE_IDENTITY_DISABLE_MULTITENANTAUTH = "true"
+        $env:MSA_AAD_DISABLE_MODERN_AUTH = "true"
+        $env:MSALDESKTOP_FORCE_DEVICECODE = "true"
+
+        # Stop any running broker processes that might interfere
+        Get-Process | Where-Object {$_.ProcessName -like "*broker*" -or $_.ProcessName -like "*WAM*"} | Stop-Process -Force -ErrorAction SilentlyContinue
 
         try {
+            Connect-MgGraph `
+                -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
+                -UseDeviceCode `
+                -NoWelcome `
+                -ContextScope Process `
+                -ErrorAction Stop
+
+            Write-Color -Text "Successfully connected to Microsoft Graph" -Color Green -ShowTime
+        } catch {
+            Write-Color -Text "Connection error: $($_.Exception.Message)" -Color Red -ShowTime
+            Write-Color -Text "Attempting alternative connection method..." -Color Yellow -ShowTime
+
+            # If first attempt fails, try disconnecting any existing sessions and retry
+            Disconnect-MgGraph -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+
             Connect-MgGraph `
                 -Scopes "DeviceManagementServiceConfig.ReadWrite.All" `
                 -UseDeviceCode `
@@ -362,6 +402,9 @@ try {
             # Clean up environment variables
             Remove-Item Env:\AZURE_IDENTITY_DISABLE_CP1 -ErrorAction SilentlyContinue
             Remove-Item Env:\MSAL_FORCE_BROKER -ErrorAction SilentlyContinue
+            Remove-Item Env:\AZURE_IDENTITY_DISABLE_MULTITENANTAUTH -ErrorAction SilentlyContinue
+            Remove-Item Env:\MSA_AAD_DISABLE_MODERN_AUTH -ErrorAction SilentlyContinue
+            Remove-Item Env:\MSALDESKTOP_FORCE_DEVICECODE -ErrorAction SilentlyContinue
         }
     }
 
@@ -375,7 +418,7 @@ try {
         GroupTag = 'Enterprise'
         GroupTagOptions = 'Enterprise','Kiosk','Shared'
         AssignedComputerNameExample = 'WAU####'
-        PostAction = 'Restart'
+        PostAction = 'Quit'  # Changed from 'Restart' to allow WAM restoration before restart
         Assign = $true
         Run = 'WindowsSettings'
         Docs = 'https://autopilotoobe.osdeploy.com/'
@@ -399,35 +442,57 @@ try {
     # Run the AutopilotOOBE module with the configured parameters
     AutopilotOOBE @Params
 
-    # Restore WAM registry settings after AutopilotOOBE completes
+    # Restore WAM registry settings after AutopilotOOBE completes (before restart)
     Write-Color -Text "Restoring Web Account Manager (WAM) registry settings..." -Color Yellow -ShowTime
-    $regPaths = @(
-        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}',
-        'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}',
-        'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'
+
+    $regRestoreSettings = @(
+        @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}'; Name = 'Enabled'; Value = 1},
+        @{Path = 'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}'; Name = 'Enabled'; Value = 1},
+        @{Path = 'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'; Name = 'LoadCredKeyFromProfile'; Value = 1},
+        @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'EnableWebAccountManager'; Value = 1}
     )
 
-    foreach ($path in $regPaths) {
-        if (Test-Path $path) {
-            Set-ItemProperty -Path $path -Name 'Enabled' -Value 1 -Type DWord -Force
+    foreach ($setting in $regRestoreSettings) {
+        try {
+            if (Test-Path $setting.Path) {
+                Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type DWord -Force -ErrorAction Stop
+                Write-Color -Text "  Restored $($setting.Path)\$($setting.Name) = $($setting.Value)" -Color DarkGray -ShowTime
+            }
+        } catch {
+            Write-Color -Text "  Warning: Could not restore $($setting.Path)\$($setting.Name)" -Color Yellow -ShowTime
         }
     }
+
+    # Remove temporary HKCU settings
+    Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\AAD' -Name 'DisableAADWAM' -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name 'EnableActivityFeed' -ErrorAction SilentlyContinue
+
+    Write-Color -Text "WAM restoration complete. Initiating restart..." -Color Green -ShowTime
+    Start-Sleep -Seconds 3
+
+    # Restart the computer to complete Autopilot enrollment
+    Restart-Computer -Force
 } catch {
     Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
     try {
         # Ensure WAM is restored even if script errors out
-        $regPaths = @(
-            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}',
-            'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}',
-            'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'
+        $regRestoreSettings = @(
+            @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{60b78e88-ead8-445c-9cfd-0b87f74ea6cd}'; Name = 'Enabled'; Value = 1},
+            @{Path = 'HKLM:\SOFTWARE\Microsoft\IdentityStore\LoadParameters\{B16898C6-A148-4967-9171-64D755DA8520}'; Name = 'Enabled'; Value = 1},
+            @{Path = 'HKLM:\SOFTWARE\Policies\Microsoft\AzureADAccount'; Name = 'LoadCredKeyFromProfile'; Value = 1},
+            @{Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'EnableWebAccountManager'; Value = 1}
         )
 
-        foreach ($path in $regPaths) {
-            if (Test-Path $path) {
-                Set-ItemProperty -Path $path -Name 'Enabled' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        foreach ($setting in $regRestoreSettings) {
+            if (Test-Path $setting.Path) {
+                Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type DWord -Force -ErrorAction SilentlyContinue
             }
         }
+
+        # Remove temporary HKCU settings
+        Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\AAD' -Name 'DisableAADWAM' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name 'EnableActivityFeed' -ErrorAction SilentlyContinue
 
         Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted -ErrorAction SilentlyContinue | Out-Null
         Set-ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue | Out-Null
