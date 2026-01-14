@@ -25,11 +25,11 @@
     irm https://tinyurl.com/AU-Autopilot | iex
 
     .NOTES
-    Version:        4.0
+    Version:        4.1
     Author:         Mark Newton
     Creation Date:  07/02/2024
     Updated by:     Robert Kocsis & Joe Laskowski
-    Update Date:    01/13/2025
+    Update Date:    01/14/2025
     Purpose/Change: Initial script development
     Update 2.0:     Added bypass for WAM (Web Account Manager) to avoid "Personal" or "Work Account" prompt
                     Added connection success message, updated GUI to reflect current Computer Naming Standards
@@ -48,6 +48,8 @@
     Update 4.0:     Enterprise authentication - replaced interactive device code flow with Entra App
                     Registration using client credentials from Azure Key Vault. No user interaction
                     required for Graph authentication. Added Az.KeyVault and Az.Accounts modules.
+    Update 4.1:     Fixed PSWriteColor compatibility - removed -Center parameter (not supported by module)
+                    and replaced with manual padding for banner and note display
 
     #>
 
@@ -492,15 +494,18 @@ function Show-Banner {
     [CmdletBinding()]
     param()
 
+    # Calculate padding for centering (approximate for 120-char console width)
+    $padding = " " * 25
+
     Write-Host ""
-    Write-Color -Text "  __ _ ", " _   _ ", " _ __   __ _ | |_   _ | |_ (_) ___ ___ " -Color White, Cyan, White -Center $True
-    Write-Color -Text " / _` |", "| | | |", "| '_ \ / _` || | | | || __|| |/ __/ __|" -Color White, Cyan, White -Center $True
-    Write-Color -Text "| (_| |", "| |_| |", "| | | || (_| || | |_| || |_ | | (__\__ \" -Color White, Cyan, White -Center $True
-    Write-Color -Text " \__,_|", " \__,_|", "|_| |_| \__,_||_|\__, | \__||_|\___|___/" -Color White, Cyan, White -Center $True
-    Write-Color -Text "       ", "       ", "                 |___/                  " -Color White, Cyan, White -Center $True
+    Write-Color -Text "${padding}  __ _ ", " _   _ ", " _ __   __ _ | |_   _ | |_ (_) ___ ___ " -Color White, Cyan, White
+    Write-Color -Text "${padding} / _`` |", "| | | |", "| '_ \ / _`` || | | | || __|| |/ __/ __|" -Color White, Cyan, White
+    Write-Color -Text "${padding}| (_| |", "| |_| |", "| | | || (_| || | |_| || |_ | | (__\__ \" -Color White, Cyan, White
+    Write-Color -Text "${padding} \__,_|", " \__,_|", "|_| |_| \__,_||_|\__, | \__||_|\___|___/" -Color White, Cyan, White
+    Write-Color -Text "${padding}       ", "       ", "                 |___/                  " -Color White, Cyan, White
     Write-Host ""
-    Write-Color -Text "AutopilotOOBE Prep ", "v4.0" -Color White, Cyan -Center $True
-    Write-Color -Text "Entra App + Azure Key Vault" -Color DarkGray -Center $True
+    Write-Color -Text "${padding}        AutopilotOOBE Prep ", "v4.1" -Color White, Cyan
+    Write-Color -Text "${padding}        Entra App + Azure Key Vault" -Color DarkGray
     Write-Host ""
 }
 
@@ -537,7 +542,8 @@ try {
     # Now show the banner
     Show-Banner
 
-    Write-Color -Text "Note: " , "You can use Alt+Tab to switch to windows that get hidden behind OOBE. Naming convention: WAU####" -Color Red, White -Center $True -LinesAfter 1
+    $padding = " " * 10
+    Write-Color -Text "${padding}Note: " , "You can use Alt+Tab to switch to windows that get hidden behind OOBE. Naming convention: WAU####" -Color Red, White -LinesAfter 1
     Write-Color -Text "Log file: ", "$transcriptPath" -Color DarkGray, White -ShowTime -LinesAfter 1
 
     # ==================== CONFIGURATION VALIDATION ====================
