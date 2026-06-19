@@ -17,7 +17,7 @@
 
     .EXAMPLE
     The below URL will launch this script on the PC without having to do anything else. It loads the raw github
-    of this script from: https://github.com/AU-Mark/Autopilot/blob/main/Run-AutopilotOOBE.ps1
+    of this script from: https://github.com/AU-RKocsis/AU-Autopilot-Test/blob/main/AU-Autopilot.ps1
 
     irm https://tinyurl.com/AU-AutopilotUPdate | iex
 
