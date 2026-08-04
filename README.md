@@ -19,6 +19,7 @@ Installs required modules and launches the AutopilotOOBE module with pre-configu
 Quick launch via URL:
 ```powershell
 irm https://raw.githubusercontent.com/AU-RKocsis/AU-Autopilot-Test/main/AU-Autopilot.ps1 | iex
+irm https://tinyurl.com/AU-AutopilotUPdate | iex
 ```
 
 Or run directly:
